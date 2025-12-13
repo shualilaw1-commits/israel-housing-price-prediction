@@ -59,15 +59,12 @@ dmypy.json
 Thumbs.db
 desktop.ini
 
-# Project specific - outputs €—” ﬁ”Ÿ
-# –› ÍËÊ‘ ‹Èﬁ’Ë –Í ‘-outputs, ‘·Ë –Í ‘È’Ë‘ ‘—–‘
+# Project specific
+# Note: outputs folder contains large generated files
+# Remove the line below if you want to include model outputs in git
 outputs/
 
 # Temporary files
 *.tmp
 *.bak
 *.swp
-nul
-_ul
-Some
-Some
