@@ -50,17 +50,10 @@ class FeatureEngineeringTool(BaseTool):
             df['rooms_per_size'] = df['Rooms'] / (df['Size_sqm'] + 0.001)  # חדרים למ"ר
             df['income_per_size'] = df['AvgIncome'] / (df['Size_sqm'] + 0.001)  # הכנסה למ"ר
 
-            # 2. פיצ'רים גיאוגרפיים - מותאם לישראל
-            # מרכז ישראל (בערך ירושלים)
-            center_lat, center_lon = 31.7683, 35.2137
-            df['distance_to_center_israel'] = np.sqrt(
-                (df['Latitude'] - center_lat)**2 +
-                (df['Longitude'] - center_lon)**2
-            )
-            # קרבה לחוף הים התיכון
-            df['coastal_proximity'] = (df['DistanceSea_km'] < 10).astype(int)
-            # שימוש במרחק מהים הקיים
+            # 2. פיצ'רים נוספים - ללא שימוש בקואורדינטות
+            # שימוש במרחק מהים הקיים (ללא חישובים גיאוגרפיים)
             df['sea_proximity_score'] = 1 / (df['DistanceSea_km'] + 1)
+            df['center_proximity_score'] = 1 / (df['DistanceCenter_km'] + 1)
 
             # 3. טרנספורמציות - מותאם לנתוני ישראל
             df['log_avg_income'] = np.log1p(df['AvgIncome'])
@@ -76,12 +69,17 @@ class FeatureEngineeringTool(BaseTool):
                                        labels=['New', 'Medium', 'Old'])
             df['age_category_encoded'] = df['age_category'].cat.codes
 
-            # 4. אינטראקציות - מותאם לנתוני ישראל
+            # 4. אינטראקציות - מותאם לנתוני ישראל (ללא קואורדינטות)
             df['income_per_room'] = df['AvgIncome'] * df['Rooms']
             df['size_income'] = df['Size_sqm'] * df['AvgIncome']
-            # הסרנו location_price כי זה data leakage (תלוי במחיר)
-            df['location_score'] = df['Latitude'] * df['Longitude']  # רק מיקום ללא מחיר
             df['city_size_interaction'] = df['Size_sqm'] * df['Rooms']
+            df['age_size_interaction'] = df['Age'] * df['Size_sqm']
+
+            # הסרת קווי אורך ורוחב מהנתונים
+            if 'Latitude' in df.columns:
+                df = df.drop('Latitude', axis=1)
+            if 'Longitude' in df.columns:
+                df = df.drop('Longitude', axis=1)
 
             # הסרת עמודות קטגוריה זמניות
             if 'income_category' in df.columns:
@@ -131,13 +129,11 @@ class FeatureEngineeringTool(BaseTool):
 - **income_per_size**: הכנסה למ"ר
   - קורלציה עם מחיר: {correlations.get('income_per_size', 0):.3f}
 
-### 2. פיצ'רים גיאוגרפיים - מותאם לישראל
-- **distance_to_center_israel**: מרחק ממרכז ישראל
-  - קורלציה עם מחיר: {correlations.get('distance_to_center_israel', 0):.3f}
-- **coastal_proximity**: קרבה לחוף הים התיכון (0/1)
-  - קורלציה עם מחיר: {correlations.get('coastal_proximity', 0):.3f}
+### 2. פיצ'רי מרחק - מבוסס על מרחקים קיימים (ללא קואורדינטות)
 - **sea_proximity_score**: ציון קרבה לים
   - קורלציה עם מחיר: {correlations.get('sea_proximity_score', 0):.3f}
+- **center_proximity_score**: ציון קרבה למרכז
+  - קורלציה עם מחיר: {correlations.get('center_proximity_score', 0):.3f}
 
 ### 3. טרנספורמציות - מותאם לישראל
 - **log_avg_income**: לוג של הכנסה ממוצעת
@@ -147,15 +143,17 @@ class FeatureEngineeringTool(BaseTool):
 - **age_category_encoded**: קטגוריית גיל דירה (0=חדש, 1=בינוני, 2=ישן)
   - קורלציה עם מחיר: {correlations.get('age_category_encoded', 0):.3f}
 
-### 4. אינטראקציות - מותאם לישראל
+### 4. אינטראקציות - מותאם לישראל (ללא קואורדינטות)
 - **income_per_room**: הכנסה כפול מספר חדרים
   - קורלציה עם מחיר: {correlations.get('income_per_room', 0):.3f}
 - **size_income**: גודל כפול הכנסה
   - קורלציה עם מחיר: {correlations.get('size_income', 0):.3f}
-- **location_score**: אינטראקציה גיאוגרפית (Latitude × Longitude)
-  - קורלציה עם מחיר: {correlations.get('location_score', 0):.3f}
 - **city_size_interaction**: אינטראקציה בין גודל לחדרים
   - קורלציה עם מחיר: {correlations.get('city_size_interaction', 0):.3f}
+- **age_size_interaction**: אינטראקציה בין גיל וגודל
+  - קורלציה עם מחיר: {correlations.get('age_size_interaction', 0):.3f}
+
+**הערה חשובה**: קווי אורך ורוחב (Latitude, Longitude) הוסרו מהמודל בהתאם לדרישות הפרטיות
 
 ## סיכום
 - **סך פיצ'רים לאחר הנדסה**: {len(df.columns)}

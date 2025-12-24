@@ -17,6 +17,14 @@ import os
 import sys
 import joblib
 from datetime import datetime
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from io import BytesIO
 
 # הוספת נתיב הפרויקט
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -489,6 +497,129 @@ def model_performance_page():
         st.markdown(data['model_card'])
 
 
+def create_prediction_pdf(city, size_sqm, rooms, floor, year_built, distance_sea, 
+                          distance_center, population, avg_income, prediction, 
+                          model_name="House Price Prediction Model"):
+    """יוצר קובץ PDF עם תוצאות ההערכה"""
+    try:
+        # מיפוי שמות ערים לאנגלית
+        city_translations = {
+            'תל אביב': 'Tel Aviv',
+            'ירושלים': 'Jerusalem',
+            'חיפה': 'Haifa',
+            'באר שבע': 'Beer Sheva',
+            'רמת גן': 'Ramat Gan',
+            'אשדוד': 'Ashdod',
+            'נתניה': 'Netanya',
+            'בני ברק': 'Bnei Brak',
+            'חולון': 'Holon',
+            'רעננה': 'Raanana'
+        }
+        city_english = city_translations.get(city, city)
+
+        # יצירת buffer לזיכרון
+        buffer = BytesIO()
+
+        # יצירת מסמך PDF
+        doc = SimpleDocTemplate(buffer, pagesize=A4, 
+                               rightMargin=72, leftMargin=72,
+                               topMargin=72, bottomMargin=18)
+        
+        # סגנונות
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#1f77b4'),
+            spaceAfter=30,
+            alignment=1  # center
+        )
+        
+        # תוכן המסמך
+        story = []
+        
+        # Title
+        story.append(Paragraph("House Price Valuation Report", title_style))
+        story.append(Spacer(1, 0.2*inch))
+
+        # Date and time
+        current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        story.append(Paragraph(f"Date: {current_time}", styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
+
+        # Property details
+        story.append(Paragraph("<b>Property Details:</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+
+        house_data = [
+            ['City', city_english],
+            ['Size (sqm)', f"{size_sqm}"],
+            ['Number of Rooms', f"{rooms}"],
+            ['Floor', f"{floor}"],
+            ['Year Built', f"{year_built}"],
+            ['Distance from Sea (km)', f"{distance_sea:.1f}"],
+            ['Distance from City Center (km)', f"{distance_center:.1f}"],
+            ['Area Population (thousands)', f"{population:.1f}"],
+            ['Average Income in Area (thousands ILS)', f"{avg_income:.1f}"],
+        ]
+        
+        house_table = Table(house_data, colWidths=[3*inch, 3*inch])
+        house_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.grey),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+            ('BACKGROUND', (1, 0), (1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(house_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Prediction results
+        story.append(Paragraph("<b>Prediction Results:</b>", styles['Heading2']))
+        story.append(Spacer(1, 0.1*inch))
+
+        prediction_data = [
+            ['Predicted Price (millions ILS)', f"{prediction:.2f}"],
+            ['Predicted Price (ILS)', f"{prediction*1000000:,.0f}"],
+            ['Model', model_name],
+        ]
+        
+        prediction_table = Table(prediction_data, colWidths=[3*inch, 3*inch])
+        prediction_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), colors.darkblue),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 14),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+            ('BACKGROUND', (1, 0), (1, -1), colors.lightblue),
+            ('FONTSIZE', (1, 0), (1, 0), 16),
+            ('FONTNAME', (1, 0), (1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(prediction_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Disclaimer
+        story.append(Paragraph("<i>Note: This valuation is based on a machine learning model and does not constitute professional advice.</i>",
+                             styles['Normal']))
+        
+        # בניית PDF
+        doc.build(story)
+        
+        # החזרת התוכן
+        buffer.seek(0)
+        return buffer.getvalue()
+        
+    except Exception as e:
+        st.error(f"שגיאה ביצירת PDF: {str(e)}")
+        return None
+
+
 def prediction_page():
     """עמוד חיזויים"""
     st.header("🎯 חיזוי מחיר דירה")
@@ -542,8 +673,6 @@ def prediction_page():
         # יצירת DataFrame עם הקלט
         input_data = pd.DataFrame({
             'City': [city],
-            'Latitude': [city_coords['lat']],
-            'Longitude': [city_coords['lon']],
             'Size_sqm': [size_sqm],
             'Rooms': [rooms],
             'Floor': [floor],
@@ -560,14 +689,9 @@ def prediction_page():
         input_data['rooms_per_size'] = input_data['Rooms'] / (input_data['Size_sqm'] + 0.001)
         input_data['income_per_size'] = input_data['AvgIncome'] / (input_data['Size_sqm'] + 0.001)
 
-        # מרכז ישראל
-        center_lat, center_lon = 31.7683, 35.2137
-        input_data['distance_to_center_israel'] = np.sqrt(
-            (input_data['Latitude'] - center_lat)**2 +
-            (input_data['Longitude'] - center_lon)**2
-        )
-        input_data['coastal_proximity'] = (input_data['DistanceSea_km'] < 10).astype(int)
+        # פיצ'רי מרחק (ללא שימוש ב-Latitude/Longitude)
         input_data['sea_proximity_score'] = 1 / (input_data['DistanceSea_km'] + 1)
+        input_data['center_proximity_score'] = 1 / (input_data['DistanceCenter_km'] + 1)
         input_data['log_avg_income'] = np.log1p(input_data['AvgIncome'])
 
         # קטגוריית הכנסה
@@ -590,9 +714,8 @@ def prediction_page():
 
         input_data['income_per_room'] = input_data['AvgIncome'] * input_data['Rooms']
         input_data['size_income'] = input_data['Size_sqm'] * input_data['AvgIncome']
-        # הסרנו location_price - זה data leakage, הוספנו location_score
-        input_data['location_score'] = input_data['Latitude'] * input_data['Longitude']
         input_data['city_size_interaction'] = input_data['Size_sqm'] * input_data['Rooms']
+        input_data['age_size_interaction'] = input_data['Age'] * input_data['Size_sqm']
 
         # המרת City ל-City_encoded (כמו באימון)
         # טעינת מיפוי הערים
@@ -605,15 +728,16 @@ def prediction_page():
             cities_list = ["תל אביב", "ירושלים", "חיפה", "באר שבע", "רמת גן", "אשדוד", "נתניה", "בני ברק", "חולון", "רעננה"]
             input_data['City_encoded'] = cities_list.index(city) if city in cities_list else 0
 
-        # הסרת עמודות לא מספריות (City) לפני החיזוי
+        # הסרת עמודות לא מספריות (City) וקווי האורך והרוחב לפני החיזוי
         input_data_numeric = input_data.select_dtypes(include=[np.number])
 
         # חיזוי - צריך לוודא שהעמודות תואמות למודל
         # נטען את features.csv כדי לראות את המבנה
         try:
             features_df = pd.read_csv("outputs/features.csv")
-            # נסיר את עמודת המחיר מהעמודות
-            feature_columns = [col for col in features_df.columns if col != 'Price_Millions' and col != 'City']
+            # נסיר רק את עמודת המחיר
+            excluded_cols = ['Price_Millions']
+            feature_columns = [col for col in features_df.columns if col not in excluded_cols]
             # נוודא שיש לנו את כל העמודות
             for col in feature_columns:
                 if col not in input_data_numeric.columns:
@@ -622,8 +746,9 @@ def prediction_page():
             
             # נשתמש רק בעמודות שקיימות במודל
             input_for_prediction = input_data_numeric[feature_columns]
-        except:
-            # אם לא מצאנו features.csv, נשתמש בכל העמודות המספריות
+        except Exception as e:
+            st.error(f"שגיאה בהכנת הנתונים: {str(e)}")
+            # נשתמש בכל העמודות המספריות
             input_for_prediction = input_data_numeric
         
         # חיזוי
@@ -657,6 +782,45 @@ def prediction_page():
         st.success(f"💰 המחיר החזוי: **{prediction:.2f} מיליון ש\"ח**")
         st.write(f"({prediction*1000000:,.0f} ש\"ח)")
         st.markdown('</div>', unsafe_allow_html=True)
+
+        # יצירת PDF
+        model_name = data['model_data'].get('model_name', 'House Price Prediction Model') if isinstance(data['model_data'], dict) else 'House Price Prediction Model'
+        pdf_content = create_prediction_pdf(
+            city=city,
+            size_sqm=size_sqm,
+            rooms=rooms,
+            floor=floor,
+            year_built=year_built,
+            distance_sea=distance_sea,
+            distance_center=distance_center,
+            population=population,
+            avg_income=avg_income,
+            prediction=prediction,
+            model_name=model_name
+        )
+        
+        if pdf_content:
+            # שמירת PDF
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            pdf_filename = f"prediction_report_{timestamp}.pdf"
+            pdf_path = os.path.join("outputs", pdf_filename)
+            
+            # יצירת תיקיית outputs אם לא קיימת
+            os.makedirs("outputs", exist_ok=True)
+            
+            # שמירת הקובץ
+            with open(pdf_path, 'wb') as f:
+                f.write(pdf_content)
+            
+            # הצגת אפשרות להורדה
+            st.download_button(
+                label="📥 הורד דוח PDF",
+                data=pdf_content,
+                file_name=pdf_filename,
+                mime="application/pdf",
+                type="primary"
+            )
+            st.info(f"✅ הדוח נשמר ב: {pdf_path}")
 
         # הצגה על מפה
         st.subheader("📍 מיקום הדירה")
